@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+SELFDIR="$(dirname "$0")"
+
+if [[ "." == "${SELFDIR}" ]]; then
+    INCLUDEPATH="../"
+else
+    INCLUDEPATH="$(dirname "$SELFDIR")"
+fi
+
+#Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+source "$INCLUDEPATH/fn/build.sh";
+
+REF="${1}";
+BUILD_FILE="${2}";
+
+#TODO change name to prepare output dir, as we are building a dockerfile not
+#the actual image
+BUILD_OUTPUT_DIR="${3}";
+BUILD_INPUT_DIR=$(dirname "${BUILD_FILE}");
+
+DOCKERFILE="${BUILD_OUTPUT_DIR}/Dockerfile";
+PREPR_FILE="${BUILD_OUTPUT_DIR}/Preparefile";
+
+#Parse steps
+VAL=$(jq "$REF" "${BUILD_FILE}");
+VAL=$(unquote "${VAL}");
+OUT=$(basename "${VAL}");
+OUT="${BUILD_OUTPUT_DIR}/${OUT}";
+
+STEP_NAME=$(echo "${REF}" | cut -d'.' -f 3,4,5,6,7,8,9,10,11,12);
+STEP_NAME=$(unquote "${STEP_NAME}");
+
+#Parse step
+
+# TODO add support for urls
+if case ${VAL} in http*) true;; *) false;; esac; then
+
+    #Is an url
+    #VAL=$(curl -L "$VAL");
+    warning "Url ref is not supported as step.";
+    exit 1;
+
+fi
+
+if [ -f "${BUILD_INPUT_DIR}/${VAL}" ]; then
+
+    # Is a local file
+    cp "${BUILD_INPUT_DIR}/${VAL}" "${OUT}";
+
+else
+
+    error "Can't locate recipe for preparation step ${BUILD_INPUT_DIR}/${VAL}.";
+    exit 1;
+
+fi
+
+# Cleanup the file
+cleanhashedlines "${OUT}"
+cleanemptylines "${OUT}"
+
+# Check if the file has Dockerfile commands in it
+# TODO test only the first 16 lines of the file
+IS_DOCKERFILE=0;
+
+while read line; do
+
+    while read kwrd; do
+
+        LEN=${#kwrd};
+        LEN=$((LEN+1));
+
+        PART=${line:0:$LEN};
+
+        if [ "${PART}" = "${kwrd} " ]; then
+
+            # Dockerfile keyword detected
+            IS_DOCKERFILE=1;
+
+            break; # break out of the loop
+
+        fi
+
+    done <"${INCLUDEPATH}/config/dockerfile-keywords"
+
+    if [ "1" = "${IS_DOCKERFILE}" ]; then
+
+        break; # break out of the loop
+
+    fi
+
+done <"${OUT}"
+
+# Retrieve file and append RUN if necessary
+CMD=$(cat "${OUT}");
+
+if [ "1" = "${IS_DOCKERFILE}" ]; then true; else
+
+    # Append RUN command
+    CMD="RUN ${CMD}";
+
+fi
+
+# Add to Layerfile
+
+layerfile "${BUILD_OUTPUT_DIR}" "#Step ${STEP_NAME}";
+layerfile "${BUILD_OUTPUT_DIR}" "${CMD}";
+
+# Remove temp file
+rm "${OUT}";
+
+exit 0;

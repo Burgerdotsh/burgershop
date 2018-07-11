@@ -1,0 +1,27 @@
+{
+  "optimize": 3,
+  "label": [
+    "one", "two", "three or four"
+  ],
+  "EntryPoint": ["executable", "param"],
+  "arguments": {
+    "BUILD_VERSION": 7,
+    "BUILD_CONFIG": "dev"
+  },
+  "steps": {
+    "Install base system": "./steps/base.sh",
+    "Gen. RSA key": "./steps/key.sh"
+  },
+  "WORKDIR": "/",
+  "copy": {
+    "./config-${BUILD_CONFIG}/supervisord.conf" : "/etc/supervisord.conf",
+    "./config-$BUILD_CONFIG/server/nginx.conf" : "/etc/nginx/nginx.conf",
+    "./welcome.php": "/tmp/welcome.php"
+  },
+  "env": {
+    "PHP_BUILD_CONFIG": "$BUILD_CONFIG"
+  },
+  "volume": ["/var/www", "/var/logs"],
+  "command": ["/bin/bash", "/start.sh"],
+  "base": "php:$BUILD_VERSION-fpm-alpine"
+}

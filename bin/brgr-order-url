@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+SELFDIR="$(dirname "$0")"
+
+if [[ "." == "${SELFDIR}" ]]; then
+    INCLUDEPATH="../"
+else
+    INCLUDEPATH="$(dirname "$SELFDIR")"
+fi
+
+#Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+
+URI="$1";
+REF="$2"; #TODO add support for ref
+TMPDIR="$3";
+
+# Backup of PWD
+BPWD="${PWD}";
+
+#TODO limit file size to download to 16MB|96MB|256MB
+
+#Init build hash
+BUILD_HASH=$(echo "${URI}" | openssl md5);
+
+STATUS=$(urlcode "${URI}");
+
+if [[ "200" != "${STATUS}" ]]; then
+
+    #Invalid status code
+    warning "Url ${URI} returned an invalid status code: ${STATUS} ... .";
+    exit 1;
+
+fi
+
+#Validate json response
+CHECK=$(jqcheck "${URI}");
+
+if [ -z "${CHECK}" ]; then true; else
+
+    # Invalid json at url
+    warning "Invalid json file found at ${URI}: ${CHECK} ... .";
+    exit 1;
+
+fi
+
+# Check for version field
+VERSION=$(jqfile '.version' "${URI}");
+
+if [ -z "${VERSION}" ]; then
+
+    #Empty version, retrieve hash from ETag or Last-Modified
+
+    ETAG=$(header ${URI} "etag")
+    LMOD=$(header ${URI} "last-modified")
+
+    if [ -z "${ETAG}" ] && [ -z  "${LMOD}" ]; then
+
+        warning "Could not determine url version";
+        warning "No version string found or cache headers... .";
+        exit 1;
+
+    fi
+
+    #Set build hash
+    BUILD_HASH=$(echo "${URI}-${ETAG}-${LMOD}" | openssl md5);
+
+else
+
+    #Set build hash
+    BUILD_HASH=$(echo "${URI}-${VERSION}" | openssl md5);
+
+fi
+
+#Compute cache target for url
+LOCAL_PATH=$(echo "${BUILD_HASH}" | openssl md5);
+LOCAL_PATH="${TMPDIR}/${LOCAL_PATH}";
+
+#Download file to local path #TODO support for archives
+FILENAME=$(basename "${URI}");
+
+if [ -z "${FILENAME}" ]; then
+
+    #Set default filename
+    FILENAME="Burgerfile.json";
+
+fi
+
+FILENAME="${LOCAL_PATH}/${FILENAME}";
+
+if [ -d "${LOCAL_PATH}" ]; then true; else
+
+    mkdir -p "${LOCAL_PATH}";
+
+    #Check if folder exists
+    if [ -d "${LOCAL_PATH}" ]; then true; else
+
+        warning "Could not create folder ${LOCAL_PATH} ... .";
+        exit 1;
+
+    fi
+
+fi
+
+#Lock folder
+
+LOCKED=$(lock "${LOCAL_PATH}")
+
+if [[ "locked" == "${LOCKED}" ]]; then
+
+    #Download file
+    info "Downloading build file ${URI} ... .";
+
+    curl "${URI}" --output "${FILENAME}";
+
+    #Unlock
+    #TODO maybe we shouldn't unlock the folder here,
+    # locking means it's prepared to be built
+    unlock "${LOCAL_PATH}";
+
+else
+
+     warning "Could not lock folder ${LOCAL_PATH} for update... .";
+     exit 1;
+
+fi
+
+echo "${LOCAL_PATH}";
+

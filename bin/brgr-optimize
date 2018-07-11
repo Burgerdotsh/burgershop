@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+SELFDIR="$(dirname "$0")"
+
+if [[ "." == "${SELFDIR}" ]]; then
+    INCLUDEPATH="../"
+else
+    INCLUDEPATH="$(dirname "$SELFDIR")"
+fi
+
+# Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+source "$INCLUDEPATH/fn/build.sh";
+
+# Get build tmp dir
+BUILD_TMP_DIR="${1}";
+
+# Get optimization level # TODO support fot higher opt. levels
+LEVEL="${2}";
+
+# Internal vars
+DOCKERFILE_RAW="${BUILD_TMP_DIR}/Dockerfile.raw";
+DOCKERFILE_MIN="${BUILD_TMP_DIR}/Dockerfile.min";
+
+# Generate raw dockerfile
+
+for filename in $(find ${BUILD_TMP_DIR}/Layerfile.* 2> /dev/null); do
+
+    cat "${filename}" >> "${DOCKERFILE_RAW}";
+
+done
+
+# Lint the dockerfile
+dockerfilelint "${DOCKERFILE_RAW}";
+
+# TODO Optimize the dockerfile
+
+echo "${DOCKERFILE_RAW}";
+
+exit 0;

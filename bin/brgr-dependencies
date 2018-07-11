@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+SELFDIR="$(dirname "$0")"
+
+if [[ "." == "${SELFDIR}" ]]; then
+    INCLUDEPATH="../"
+else
+    INCLUDEPATH="$(dirname "$SELFDIR")"
+fi
+
+#Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+
+# Check bash version
+BASH_VER=$(echo $BASH_VERSION | cut -d'.' -f 1,2);
+REQUIRED=4.1
+
+if [[ ${BASH_VER} < ${REQUIRED} ]]; then
+    error "Bash version ${BASH_VER} is not supported. Please upgrade to ${REQUIRED} or higher.";
+    exit 1;
+fi
+
+# Check each dependency
+for dep in "$@"
+do
+    check ${dep};
+done

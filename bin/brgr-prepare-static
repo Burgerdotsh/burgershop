@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+
+SELFDIR="$(dirname "$0")"
+
+if [[ "." == "${SELFDIR}" ]]; then
+    INCLUDEPATH="../"
+else
+    INCLUDEPATH="$(dirname "$SELFDIR")"
+fi
+
+#Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+source "$INCLUDEPATH/fn/build.sh";
+
+REF="${1}";
+KEY="${2}";
+
+BUILD_FILE="${3}";
+BUILD_OUTPUT_DIR="${4}";
+
+# Args file path
+ARGUMSFILE="${BUILD_OUTPUT_DIR}/Argsfile";
+COMANDFILE="${BUILD_OUTPUT_DIR}/Cmdfile";
+ENTRYPFILE="${BUILD_OUTPUT_DIR}/Entrypointfile";
+
+# Parse variable
+ZVAL=$(jq ".${REF}" "${BUILD_FILE}");
+
+if [[ "${ZVAL}" == "[]" ]] || [[ "${ZVAL}" == "null" ]]; then
+
+    #No vars defined
+    false;
+
+else
+
+
+    info "Processing section ${REF}";
+
+    layerfile "${BUILD_OUTPUT_DIR}" "#Section ${REF}";
+
+    case "${ZVAL}" in
+
+
+        [*)
+
+            # Process array
+
+            # CMD
+            if [[ "${KEY}" == "CMD" ]]; then
+
+                CMND=$(echo ${ZVAL} | jq -c '.');
+                echo "${KEY} ${CMND}" > "${COMANDFILE}";
+
+            fi
+
+            # ENTRYPOINT
+            if [[ "${KEY}" == "ENTRYPOINT" ]]; then
+
+                # Set entrypoiny
+                EPT=$(echo ${ZVAL} | jq -c '.');
+
+                echo "${KEY} ${EPT}" > "${ENTRYPFILE}";
+
+            # Other
+            else
+
+                echo ${ZVAL} | jq -c '.[]' | while read var; do
+
+                   #Get variable value
+
+                   VAL=$(unquote ${var});
+
+                   #Quote file paths
+                   if [[ "${KEY}" == "COPY" ]] || [[ "${KEY}" == "ADD" ]]; then
+                        OBJKEY="\"${OBJKEY}\"";
+                   fi
+
+                   if  [[ "${KEY}" == "ARG" ]]; then
+
+                        #ARG Add arg to file
+                        argsfile "${ARGUMSFILE}" "${VAL}" "";
+
+                   elif  [[ "${KEY}" == "LABEL" ]]; then
+
+                        #LABEL Add label with default value (1)
+                        layerfile "${BUILD_OUTPUT_DIR}" "${KEY} ${VAL}=1";
+
+                   else
+
+                        # Default
+                        layerfile "${BUILD_OUTPUT_DIR}" "${KEY} ${VAL}";
+
+                   fi
+
+               done
+
+            fi
+
+        ;;
+
+        {*)
+
+            # Is an object
+            ZVAL=$(echo ${ZVAL} | jq 'keys_unsorted');
+
+            echo ${ZVAL} | jq -c '.[]' | while read var; do
+
+               #Get variable value
+
+               OBJKEY=$(unquote ${var});
+               OBJREF=".$REF[\"${OBJKEY}\"]";
+
+               VAL=$(jq "${OBJREF}" "${BUILD_FILE}");
+
+               # Quote file paths
+               if [[ "${KEY}" == "COPY" ]] || [[ "${KEY}" == "ADD" ]]; then
+                    OBJKEY="\"${OBJKEY}\"";
+               fi
+
+
+               if  [[ "${KEY}" == "ARG" ]]; then
+
+                    #ARG Add arg to file
+                    argsfile "${ARGUMSFILE}" "${OBJKEY}" "${VAL}";
+
+               elif  [[ "${KEY}" == "LABEL" ]]; then
+
+                    #LABEL Add label with value
+                    layerfile "${BUILD_OUTPUT_DIR}" "${KEY} ${OBJKEY}=${VAL}";
+
+               else
+
+                    # Default
+                    layerfile "${BUILD_OUTPUT_DIR}" "${KEY} ${OBJKEY} ${VAL}";
+
+               fi
+
+
+           done
+
+        ;;
+
+        *)
+
+            # Process scalar
+
+            if  [[ "${KEY}" == "LABEL" ]]; then
+
+                #LABEL Add label with default value (1)
+                layerfile "${BUILD_OUTPUT_DIR}" "${KEY} ${ZVAL}=1";
+
+            fi
+
+            # CMD Add cmd to file
+            if [[ "${KEY}" == "CMD" ]]; then
+
+                echo "${KEY} ${ZVAL}" > "${COMANDFILE}";
+
+            fi
+
+            # ENTRYPOINT Add entrypoint to file
+            if [[ "${KEY}" == "ENTRYPOINT" ]]; then
+
+                echo "${KEY} ${ZVAL}" > "${ENTRYPFILE}";
+
+            else
+
+                # Other command
+                layerfile "${BUILD_OUTPUT_DIR}" "${KEY} ${ZVAL}";
+
+            fi
+
+        ;;
+
+    esac
+
+fi
+
+exit 0;

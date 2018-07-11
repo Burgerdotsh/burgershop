@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+
+SELFDIR="$(dirname "$0")"
+
+if [[ "." == "${SELFDIR}" ]]; then
+    INCLUDEPATH="../"
+else
+    INCLUDEPATH="$(dirname "$SELFDIR")"
+fi
+
+#Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+source "$INCLUDEPATH/fn/build.sh";
+
+INI_FILE="${1}";
+
+BUILD_NAME="${2}";
+BUILD_TAG="${3}";
+BASE_IMG="scratch";
+
+BUILD_HASH='';
+BUILD_FILE='';
+BUILD_DIR='';
+
+CACHE_DIR='.cache';
+
+if [ -f "${INI_FILE}" ]; then
+
+      #Include ini file
+      source "${INI_FILE}";
+
+      if [ -z "${BUILD_HASH}" ]; then
+
+        warning "Invalid ini file ${INI_FILE} ...";
+        exit 1;
+
+     fi
+
+else
+
+    warning "Could not find ini file ${INI_FILE} ...";
+    exit 1;
+
+fi
+
+#Validate json file
+JSON_CHECK=$(jqcheck "${BUILD_FILE}");
+
+if case ${JSON_CHECK} in *error*) true;; *) false;; esac; then
+
+	#Invalid json
+	warning "Invalid configuration file: ${BUILD_FILE}: ${JSON_CHECK}";
+	exit 1;
+
+fi
+
+#Retrieve name:tag from config
+BUILD_NAME=$(jqfile '.name' "${BUILD_FILE}" "${BUILD_NAME}");
+BUILD_TAG=$(jqfile '.tag' "${BUILD_FILE}" "${BUILD_TAG}");
+
+#Retrieve base image
+BASE_IMG="$(jqfile '.base' "${BUILD_FILE}" "${BASE_IMG}")";
+
+# Retrieve optimization level
+OPT_LVL="$(jqfile '.optimize' "${BUILD_FILE}" 0)";
+
+#TODO notify build started for hash so no
+# other worker is preparing the same build...
+
+#Parse image layers
+
+BUILD_OUTPUT_DIR="${CACHE_DIR}/builds/${BUILD_HASH}";
+
+if [ -d "${BUILD_OUTPUT_DIR}" ]; then
+    #Dir exists
+    #TODO add support for rebuild
+    warning "Build ${BUILD_HASH} has already been prepared.";
+    warning "If you'd like to rebuild, please issue a --rebuild";
+    exit 1;
+
+else
+
+    #Create folder
+    mkdir -p "${BUILD_OUTPUT_DIR}";
+
+fi
+
+ARGS_FILE="${BUILD_OUTPUT_DIR}/Argsfile";
+
+# TODO we should lock the context so it does not change while we
+# generate the dockerfile. E.g. if we pull git:master, a pull might
+# take place while we build the dockerfile
+
+#TODO always pull the latest base img
+
+info "Building ${BUILD_HASH} as ${BUILD_NAME}:${BUILD_TAG} from ${BASE_IMG} ...";
+
+layerfile "${BUILD_OUTPUT_DIR}" "#Burger Dockerfile generated for ${BUILD_HASH} on <date> ";
+
+#TODO optimize generated Dockerfile
+#see: https://medium.com/@esotericmeans/optimizing-your-dockerfile-dc4b7b527756
+
+# Parse Burgerfile
+ALL=$(jq '.' "${BUILD_FILE}" | jq 'keys_unsorted' | jq -c '.[]');
+
+# Check if the json has values
+if [[ "${ALL}" == "[]" ]] || [[ "${ALL}" == "null" ]] || [[ "${ALL}" == "" ]];
+then
+
+    #No vars defined
+    error "Empty or invalid json file provided.";
+    exit 1;
+
+fi
+
+echo "${ALL}" | while read keyword; do
+
+    KEYWORD=$(unquote "${keyword}");
+    MATCHWD=$(echo ${KEYWORD} | tr '[:upper:]' '[:lower:]');
+    OBJPATH=".$KEYWORD";
+
+    case "${MATCHWD}" in
+
+        # Ignore name, tag and optimize and test keywords
+        "name"|"tag"|"update"|"optimize"|"test"|"taste")
+            continue;
+        ;;
+
+        # Base (Burgerfile.json spec.)
+        "base"|"BASE"|"from"|"FROM")
+
+            BASE_IMG=$(jq "${OBJPATH}" "${BUILD_FILE}");
+            BASE_IMG=$(unquote "${BASE_IMG}");
+
+        ;;
+
+        # Args (Burgerfile.json spec. and Dockerfile spec.)
+        "arg"|"args"|"arguments"|"toppings")
+
+            # Add args
+            brgr-prepare-static "${KEYWORD}" "ARG" "${BUILD_FILE}" "${BUILD_OUTPUT_DIR}";
+
+        ;;
+
+        # Author (Burgerfile.json spec.)
+        "author"|"maintainer")
+
+            MAINTNR=$(jq "${OBJPATH}" "${BUILD_FILE}")
+
+            layerfile "${BUILD_OUTPUT_DIR}" "LABEL maintainer=${MAINTNR}";
+
+        ;;
+
+        # Comment (Burgerfile.json spec.)
+        "comment")
+
+            CMMNT=$(jq "${OBJPATH}" "${BUILD_FILE}");
+
+            layerfile "${BUILD_OUTPUT_DIR}" "LABEL comment=${CMMNT}";
+
+        ;;
+
+        # Label (Burgerfile.json and Dockerfile spec.)
+        "label"|"labels")
+
+            # Add labels
+            brgr-prepare-static "${KEYWORD}" "LABEL" "${BUILD_FILE}" "${BUILD_OUTPUT_DIR}";
+
+        ;;
+
+        # Prepare (Burgerfile.json spec.)
+        "prepare"|"steps"|"run")
+
+            #Parse steps
+            STEPS=$(jq "${OBJPATH}" "${BUILD_FILE}");
+
+            if [[ "${STEPS}" == "[]" ]] || [[ "${STEPS}" == "null" ]]; then false; else
+
+                STEPS=$(echo ${STEPS} | jq 'keys_unsorted');
+
+                echo ${STEPS} | jq -c '.[]' | while read var; do
+
+                    # Get variable value
+
+                    KEY="$var";
+                    REF=".${KEYWORD}.$KEY";
+
+                    # Prepare step
+                    brgr-prepare-step "${REF}" "${BUILD_FILE}" "${BUILD_OUTPUT_DIR}";
+
+                done
+
+            fi
+
+        ;;
+
+        #Cutlery (Burgerfile.json and Dockerfile spec.)
+        "cutlery"|"env")
+
+            # Add env variables
+            brgr-prepare-static "${KEYWORD}" "ENV" "${BUILD_FILE}" "${BUILD_OUTPUT_DIR}";
+
+        ;;
+
+        #Seasoning (Burgerfile.json and Dockerfile spec.)
+        "seasoning"|"files"|"copy")
+
+            # Add files to copy
+            brgr-prepare-static "${KEYWORD}" "COPY" "${BUILD_FILE}" "${BUILD_OUTPUT_DIR}";
+
+        ;;
+
+        #Serve (Burgerfile.json and Dockerfile spec.)
+        "cmd"|"command"|"serve"|"serving")
+
+            # Add cmd
+            brgr-prepare-static "${KEYWORD}" "CMD" "${BUILD_FILE}" "${BUILD_OUTPUT_DIR}";
+
+        ;;
+
+        #Other Dockerfile command
+        *)
+
+            # TODO might ref to a file or url
+            KEY=$(echo "${KEYWORD}" | tr '[:lower:]' '[:upper:]');
+
+            #Add command to dockerfile
+            brgr-prepare-static "${KEYWORD}" "${KEY}" "${BUILD_FILE}" "${BUILD_OUTPUT_DIR}";
+
+        ;;
+
+    esac
+
+done
+
+# Add base/from (optimize lvl. 0)
+
+LAYERFILE="${BUILD_OUTPUT_DIR}/Layerfile.1";
+
+if [ -f "${LAYERFILE}" ]; then
+
+    echo "FROM ${BASE_IMG}" > "${BUILD_OUTPUT_DIR}/tmpfromfile";
+    cat "${LAYERFILE}" >> "${BUILD_OUTPUT_DIR}/tmpfromfile"
+
+    mv "${BUILD_OUTPUT_DIR}/tmpfromfile" "${LAYERFILE}";
+
+fi
+
+# Add arguments to dockerfile (optimize lvl. 0)
+
+if [ -f ${ARGS_FILE} ]; then
+
+    while read arg; do
+
+            arg_name=$(echo "${arg}" | cut -d'=' -f 1);
+
+            for filename in $(find ${BUILD_OUTPUT_DIR}/Layerfile.* 2> /dev/null); do
+
+                LAYERFILE="${filename}";
+
+                # Does layer has args
+                has_arg=0;
+
+                if grep -q "\$$arg_name" "$filename"; then
+                    # Arg found as $ARG
+                    has_arg=1;
+                fi
+
+                if grep -q "\${$arg_name}" "$filename"; then
+                    # Arg found as ${ARG}
+                    has_arg=1;
+                fi
+
+                if [[ ${has_arg} == 1 ]]; then
+
+                    # Append arg to file
+                    echo "ARG ${arg}" > "${BUILD_OUTPUT_DIR}/tmpargfile";
+                    cat "${filename}" >> "${BUILD_OUTPUT_DIR}/tmpargfile"
+
+                    mv "${BUILD_OUTPUT_DIR}/tmpargfile" "${filename}"
+
+                fi
+
+            done
+
+    done <"${ARGS_FILE}"
+
+    # Drop arguments file
+    unlink "${ARGS_FILE}";
+
+fi
+
+# Move entrypoint and cmd at the bottom (optimize lvl. 0)
+
+if [ -f "${BUILD_OUTPUT_DIR}/Entrypointfile" ]; then
+
+    cat "${BUILD_OUTPUT_DIR}/Entrypointfile" >> "${LAYERFILE}";
+
+fi
+
+if [ -f "${BUILD_OUTPUT_DIR}/Cmdfile" ]; then
+
+    cat "${BUILD_OUTPUT_DIR}/Cmdfile" >> "${LAYERFILE}";
+
+fi
+
+# Save build output dir to ini file
+echo "BUILD_TMP_DIR=${BUILD_OUTPUT_DIR}" >> "${INI_FILE}";
+
+# TODO validate resulting dockerfile with hadolint
+
+exit 0;

@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+
+##########################################################################
+# brgr-order                                                             #
+#                                                                        #
+# Fill burger order from URL                                             #
+#                                                                        #
+# Usage:                                                                 #
+#  brgr-order [<url>] [<ref/file>]                                       #
+#                                                                        #
+# @author: adrian7 <adrian@burger.sh>                                    #
+# @version: 0.3                                                          #
+##########################################################################
+
+
+cd $(dirname "$0") && INCLUDEPATH="../../";
+
+# Extend path to support binaries
+PATH="$PATH:$INCLUDEPATH/bin/tools:$INCLUDEPATH/bin/order";
+
+# Default cache label
+CACHE_LABEL="default";
+
+DEFAULT_BUILD_FILE="Burgerfile.json";
+DEFAULT_BUILD_DIR=".burger";
+
+# Include functions
+source "${INCLUDEPATH}/fn/usage.sh";
+source "${INCLUDEPATH}/fn/util.sh";
+source "${INCLUDEPATH}/fn/build.sh";
+
+# Include config
+if [ -f "${INCLUDEPATH}/config/burger.ini" ]; then
+    source <(grep = "${INCLUDEPATH}/config/burger.ini");
+fi
+
+# Read params
+URI="${1}";
+REF="${2}";
+INI="${3}";
+
+BUILD_HASH="${URI}/${REF}";
+INPUT_PATH="${URI}";
+
+# Backup of PWD
+BPWD="${PWD}";
+
+if [ -z ${GLOBAL_CACHE_LABEL+x} ]; then true; else
+    CACHE_LABEL="${GLOBAL_CACHE_LABEL}";
+fi
+
+# Cache dir
+CACHE_DIR=$(brgr-cache init "${CACHE_LABEL}");
+
+# No uri specified
+if [ -z "${URI}" ]; then
+
+    # Defaults to current directory
+    URI=".";
+
+else
+
+    case "${URI}" in
+
+        *git)
+
+            # Fetch git repository
+
+            URI=$(brgr-order-git "${URI}" "${REF}" "${CACHE_LABEL}");
+
+            if [ $? -eq 0 ]; then true; else
+
+                # Failed to init git repo
+
+                exit "Failed to set up git repository ${URI}.";
+                exit 1;
+
+            fi
+
+            # Generate hash
+            cd "${URI}";
+            COMMIT=$(git rev-parse HEAD);
+            BUILD_HASH="${BUILD_HASH}/${COMMIT}";
+            cd "${BPWD}";
+
+            exit 1; # TODO...
+        ;;
+
+        # Fetch url
+
+        http*)
+
+            # TODO...
+
+            URI=$(brgr-order-url "${URI}" "${REF}" "${CACHE_DIR}");
+
+            if [ $? -eq 0 ]; then true; else
+                #Failed to init url
+                exit 1;
+            fi
+
+        ;;
+
+        # TODO support hg, bzr and svn
+
+    esac
+
+fi
+
+
+
+# Init tar or zip archive # TODO...
+
+# Init folder
+if [ -d "${URI}" ]; then
+
+    # Locate build file
+    #TODO add support for building from Dockerfile too
+    URI=$(buildfile "${URI}" "${DEFAULT_BUILD_FILE}" "${DEFAULT_BUILD_DIR}");
+
+
+# Init folder:file
+elif [[ "${URI}" =~ : ]]; then
+
+	parts=$(echo "${URI}" | tr ":" "\n");
+
+	set -- ${parts}
+
+	# Check if folder exists
+	if [ -d "${1}" ]; then
+
+		#Locate build file
+        URI=$(buildfile "${1}/${2}" "${DEFAULT_BUILD_FILE}" "${DEFAULT_BUILD_DIR}");
+
+        if [ -z "${URI}" ]; then
+
+            #Lookup .burger folder
+            URI=$(buildfile "${1}/.burger/${2}" "${DEFAULT_BUILD_FILE}" "${DEFAULT_BUILD_DIR}");
+
+        fi
+
+	else
+
+		error "Could not find build folder $1";
+		exit 1;
+
+	fi
+
+fi
+
+
+# Init file
+if [ -f "${URI}" ]; then true; else
+
+    if [ -f  "${URI}.json" ]; then
+    	URI="${URI}.json";
+    else
+
+        error "Could not find a valid configuration file at ${INPUTPATH}";
+        exit 1;
+
+     fi
+fi
+
+BUILD_DIR=$(realpath $(dirname "${URI}"));
+BUILD_FILE=$(realpath "${URI}");
+
+# TODO Is important that for the same version of the dir/file we generate the
+# same build hash that way id A Dockerfille already exists for this hash we
+# don't need to rebuild it
+# or further rebuild the image, although if the base image changes the resultimg image
+# should be rebuilt
+BUILD_HASH=$(echo "${BUILD_HASH}/${BUILD_FILE}" | openssl sha1);
+
+if [ -z "${INI}" ]; then
+
+    #No ini file specified
+    echo "$URI";
+
+else
+
+    #Put vars in ini file
+    echo "CACHE_DIR=\"${TMPDIR}\"" >> "${INI}";
+    echo "BUILD_HASH=\"${BUILD_HASH}\"" >> "${INI}";
+    echo "BUILD_FILE=\"${BUILD_FILE}\"" >> "${INI}";
+    echo "BUILD_DIR=\"${BUILD_DIR}\"" >> "${INI}";
+
+    exit 0;
+fi

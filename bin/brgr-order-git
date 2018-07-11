@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+
+# One-liner: setup include path
+cd $(dirname "$0") && INCLUDEPATH="../../";
+
+#Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+
+# Extend path to support binaries
+PATH="$PATH:$INCLUDEPATH/bin/tools:$INCLUDEPATH/bin/order";
+
+# Repository uri: http://my.upstream.repo.git
+URI="${1}";
+
+# Reference to build: branch, c0mm1t, tag
+REF="${2}";
+
+# Temporary / cache folder
+CACHE_DIR=$(brgr-cache init "${3}");
+
+# Compute cache target for repository
+LOCAL_PATH=$(echo "${URI}" | openssl md5);
+LOCAL_PATH="${CACHE_DIR}/${LOCAL_PATH}";
+
+# Extract repository ref: master,
+REPO_REF=$(echo "${REF}" | cut -d'/' -f 1);
+
+if [ -d "${LOCAL_PATH}" ]; then
+
+    # Folder already exists
+
+    LOCKED=$(lock "${LOCAL_PATH}")
+
+    if [[ "locked" == "${LOCKED}" ]]; then
+
+        #Update repo
+
+       info "Updating repository ${URI} to ${REPO_REF} ...";
+
+       cd "${LOCAL_PATH}";
+
+       # TODO we need to check if fetch was successful
+       git fetch origin "${REPO_REF}";
+
+       cd "${BPWD}";
+
+       unlock "${LOCAL_PATH}";
+
+    else
+
+       #Could not lock repository for update, TODO maybe we should wait and retry
+       error "Could not lock folder ${LOCAL_PATH} for update.";
+       exit 1;
+
+    fi
+
+else
+
+    # Init and fetch remote repository
+
+    mkdir -p "${LOCAL_PATH}";
+
+    #Lock folder
+    lock "${LOCAL_PATH}";
+
+    # Init and clone remote repository
+    cd "${LOCAL_PATH}";
+
+    # TODO we can't support commits, only branches/tags (e.g. advertised objects)
+    # TODO check if clone is successful
+    CLONE=$(git clone --depth=2 "${URI}" .);
+
+    #git remote add origin "${URI}";
+
+    #info "Fetching repository ${URI} at ${REPO_REF} ...";
+
+    #git fetch origin ${REPO_REF} --jobs=3;
+
+    # Check if clone was successful
+    if [ -d "${LOCAL_PATH}" ] ; then true; else
+        error "Could not clone repository ${URI}. Please check the path and try again.";
+        exit 1;
+    fi
+
+    # Unlock path
+    unlock "${LOCAL_PATH}";
+
+fi
+
+if [ -z "${REF}" ]; then true; else
+
+    IS_ADVERTISED=0;
+
+    # Look up repository ref in .git/refs
+    if [ -f "${LOCAL_PATH}/.git/refs/heads/${REPO_REF}" ]; then
+
+        # It's a branch
+        REPO_REF=$(cat "${LOCAL_PATH}/.git/refs/heads/${REPO_REF}");
+        IS_ADVERTISED=1;
+
+    fi
+
+    if [ -f "${LOCAL_PATH}/.git/refs/tags/${REPO_REF}" ]; then
+
+        # It's a tag
+        REPO_REF=$(cat "${LOCAL_PATH}/.git/refs/tags/${REPO_REF}");
+        IS_ADVERTISED=1;
+
+    fi
+
+    if [[ 1 != ${IS_ADVERTISED} ]]; then
+
+        # The ref is not advertised
+        error "Ref. ${REPO_REF} is not advertised. Should be a branch or a tag.";
+        exit;
+
+    fi
+
+    # Init ref hash
+    REFHASH=${REPO_REF};
+
+    #if [ -z "${FILE_REF}" ]; then true; else
+    #    # Generate ref hash
+    #    REFHASH=$(echo "${REPO_REF}/${FILE_REF}" | openssl md5);
+    #fi
+
+    REFHASH=${REFHASH:0:12};
+
+    cd "${LOCAL_PATH}";
+
+    LOCAL_PATH="${LOCAL_PATH}-${REFHASH}";
+
+    # Checkout ref to folder
+
+    if [ -d "${LOCAL_PATH}" ]; then true; else
+
+        info "Checking out reference ${REPO_REF} ... ";
+
+        mkdir -p "${LOCAL_PATH}";
+
+        # Init bare repository
+        git init --bare "${LOCAL_PATH}";
+
+        # Checkout reference
+        git --work-tree="${LOCAL_PATH}" checkout ${REPO_REF} -- .;
+
+    fi
+
+fi
+
+# Return build path
+echo "${LOCAL_PATH}";
+
+exit 0;

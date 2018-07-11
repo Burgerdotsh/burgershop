@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+##########################################################################
+# brgr-cache                                                             #
+#                                                                        #
+# Simple tool to manage cache folders                                    #
+#                                                                        #
+# Usage:                                                                 #
+#   brgr-cache <command> [<label>] [<root-dir>]                          #
+#                                                                        #
+# @author: adrian7 <adrian@burger.sh>                                    #
+# @version: 0.1                                                          #
+##########################################################################
+
+# One-liner: setup include path
+cd $(dirname "$0") && INCLUDEPATH="../../";
+
+# Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+
+# Defaults
+DEFAULT_FOLDER="${INCLUDEPATH}/.cache";
+DEFAULT_LABEL="default";
+
+# Read params
+COMMAND="${1}";
+
+# Cache folder
+FOLDER="${3}";
+
+# Cache label
+LABEL="${2}";
+
+# TODO support for mounting cache as ramfs or tmpfs
+
+if [ -z "${COMMAND}" ]; then
+    COMMAND="init";
+fi
+
+if [ -z "${FOLDER}" ]; then
+    FOLDER=${DEFAULT_FOLDER};
+fi
+
+if [ -z "${LABEL}" ]; then
+    # No label specified
+    LABEL=${DEFAULT_LABEL};
+fi
+
+# Label hash
+LABEL=$(echo "${LABEL}" | openssl md5);
+LABEL=${LABEL:0:7};
+
+# Update path
+FOLDER="${FOLDER}/${LABEL}";
+
+case ${COMMAND} in
+
+    "init")
+
+        # Init cache folder
+
+        if [ -d "${FOLDER}" ]; then true; else
+
+            mkdir -p "${FOLDER}";
+
+            if [ -d "${FOLDER}" ]; then true; else
+                error "Could not initialize cache at ${FOLDER}";
+                exit 1;
+            fi
+
+        fi
+
+        # Return realpath of the cache folder
+        realpath "${FOLDER}";
+
+    ;;
+
+    "purge")
+
+        # Purge cache
+        # TODO add time and modtime filters
+
+        # Remove files only, up to 3 levels deep
+        rm -f "${FOLDER}/*"
+        rm -f "${FOLDER}/*/*"
+        rm -f "${FOLDER}/*/*/*"
+
+        # Remove anything nested deeper
+        rm -rf "${FOLDER}/*/*/*/*"
+
+    ;;
+
+    *)
+
+        # Unknown command
+        error "Unknown command ${COMMAND}.";
+    ;;
+
+esac
+
+

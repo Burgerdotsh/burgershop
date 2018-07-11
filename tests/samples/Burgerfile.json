@@ -1,0 +1,34 @@
+{
+  "name": "burger-php-app",
+  "tag": "may-flavour",
+  "base": "alpine:3.7",
+  "update": true,
+  "author": "Maintainer <user@email>",
+  "comment": "Burger with added spices",
+  "arguments": {
+    "REPOSITORY": "https://custom.repo.git",
+    "COMMIT": "y6tg53a"
+  },
+  "env": {
+    "PHP_LANG_VERSION": "7.1.1",
+    "OPTIONAL_SPICES": "jalapeno or salsa",
+    "APP_VERSION": "2.1",
+    "BOOLEAN_ENV": true
+  },
+  "prepare": {
+    "Webserver (nginx)": "folder-with-dotburger/.burger/basket/nginx",
+    "PHP 7 Runtime": "folder-with-dotburger/.burger/basket/php-common",
+    "PHP Debug": "folder-with-dotburger/.burger/basket/xdebug",
+    "Database (PostgreSQL)": "folder-with-dotburger/.burger/basket/postgresql"
+  },
+  "seasoning": {
+    "folder-with-dotburger/.burger/config/php-ini.ini": "/etc/opt/php7.ini",
+    "folder-with-dotburger/.burger/config/supervisor.conf": "/supervisor.conf",
+    "files/phpinfo.php": "/var/www/index.php"
+  },
+  "entrypoint": "start.sh",
+  "expose": [1234, 8080, "9000/tcp"],
+  "volume": "/var/www",
+  "workdir": "/var/$COMMIT",
+  "command": "/bin/bash /var/www/start.sh"
+}

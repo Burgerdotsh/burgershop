@@ -1,0 +1,4 @@
+#Install xDebug
+apk update && apk add autoconf
+pecl install xdebug
+docker-php-ext-enable xdebug

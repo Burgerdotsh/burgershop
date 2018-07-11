@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+SELFDIR="$(dirname "$0")"
+
+if [[ "." == "${SELFDIR}" ]]; then
+    INCLUDEPATH="../"
+else
+    INCLUDEPATH="$(dirname "$SELFDIR")"
+fi
+
+#Include functions
+source "$INCLUDEPATH/fn/usage.sh";
+source "$INCLUDEPATH/fn/util.sh";
+source "$INCLUDEPATH/fn/build.sh";
+
+BUILD_FILE="${1}";
+DOCKERFILE="${2}";
+INCR_FILE="${3}";
+
+#TODO test for input...
+
+#Parse env variables
+ENVLIST=$(jq '.env' "${BUILD_FILE}");
+
+if [[ "${ENVLIST}" == "[]" ]] || [[ "${ENVLIST}" == "null" ]]; then
+
+    #No env vars defined
+    false;
+
+else
+
+     ENVLIST=$(echo ${ENVLIST} | jq 'keys_unsorted');
+
+     echo ${ENVLIST} | jq -c '.[]' | while read var; do
+
+        #Get variable value
+
+        KEY=$(unquote ${var});
+        REF=".env.$KEY";
+
+        VAL=$(jq "${REF}" "${BUILD_FILE}");
+
+        dockerfile "${DOCKERFILE}" "ENV ${KEY} ${VAL}";
+
+    done
+
+fi
+
+exit 0;
