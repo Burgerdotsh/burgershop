@@ -1,47 +1,33 @@
-# burger-local
+# burgershop
 
 *Builds your Burgerfile.json locally*
-
 
 ### Usage 
 
 ```bash
 #Build Burgerfile.json or .burger/Burgerfile.json
-burger
+burgershop
 
 #Build folder/Burgerfile.json or folder/.burger/Burgerfile.json
-burger folder 
+burgershop folder 
 
 #Build folder/production.json or folder/.burger/production.json
-burger folder:production
+burgershop folder:production
 
 #Build folder/devimage.json or folder/.burger/devimage.json
-burger ./folder/devimage
+burgershop ./folder/devimage
 
 #Build from remote Burger.json file
-burger http://myfiles.com/Burger.json
+burgershop http://myfiles.com/Burger.json
 
 #Build tar archive, tar/devimage.json or tar/.burger/devimage.json
-burger http://myfiles.com/Burger.tar devimage
+burgershop http://myfiles.com/Burger.tar devimage
 
 #Build repository, default branch, Burgerfile.json or .burger/Burgerfile.json
-burger https://git.github.com/repo.git
+burgershop https://git.github.com/repo.git
 
 #Build repository, feature branch, Burgerfile.json or .burger/Burgerfile.json
-burger https://git.github.com/repo.git feature
-
-#Build repository, ref/commit, Burgerfile.json or .burger/Burgerfile.json
-burger https://git.github.com/repo.git e365cf6
-
-#Build repository, ref/commit, 
-# image-prod.json or .burger/image-prod.json or image-prod/Burgerfile.json
-burger https://git.github.com/repo.git e365cf6/image-prod
-
-#Build repository, ref/commit, images/test or images/test.json
-burger https://git.github.com/repo.git e365cf6/images/test
-
-#Build repository, ref/commit, images/production or images/production.json
-burger https://git.github.com/repo.git e365cf6/images:production
+burgershop https://git.github.com/repo.git feature
 ```
 
 ### Suggestion for sub-scripts
@@ -49,13 +35,13 @@ burger https://git.github.com/repo.git e365cf6/images:production
 ```bash
 
 # Fill order - lint and generate dockerfile
-burger-local order [urn]
+burgershop order [urn]
 
 # Build image
-burger cook [urn]/[hash]
+burger cook [urn]
 
 # Run tests
-burger test [urn]/[hash]
+burger test [urn]
 ```
 
 ### Options
@@ -65,3 +51,7 @@ burger uri \
     --tag "tagged" \
     --cache-dir "mycache"
 ```
+=======
+# burgershop
+Build your Burgerfile.json locally
+>>>>>>> 964c4bfd46ab9d252cf766f2f9341ae578b3c376
